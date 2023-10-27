@@ -31,6 +31,9 @@ knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
 #install.packages("knitr")
 #install.packages("kableExtra")
 #install.packages("gridExtra")
+#install.packages("reshape2")
+#install.packages("tidymodels")
+#install.packages("randomForest")
 ```
 
 ```{r}
@@ -42,6 +45,9 @@ library(knitr)
 library(kableExtra)
 library(gridExtra)
 library(readr)
+library(ggplot2)
+library(tidymodels)
+library(randomForest)
 ```
 
 # Data Collection
@@ -503,4 +509,211 @@ hypothesis_table <-
 kable(hypothesis_table, format = "html") %>% 
   kableExtra::kable_styling(bootstrap_options = "striped",
                             full_width = FALSE)
+```
+
+# Multivariable Analysis
+
+### Correlation Matrix
+
+```{r}
+correlation_matrix <- df_cleaned %>% 
+  select(age, days_associated, health_annual_paid) %>% 
+  cor() %>% 
+  round(3)
+```
+
+### Visualization
+
+```{r}
+library(reshape2)
+
+melted_correlation <- melt(correlation_matrix)
+
+matrix_correlation_plot <- ggplot(melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() + 
+  geom_text(aes(Var1, Var2, label = value)) + 
+  scale_fill_gradient2(low = "blue", high = "red", limit = c(-1,1), name = "Correlation") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_blank())
+
+matrix_correlation_plot
+
+ggsave("matrix_correlation_plot.jpg", matrix_correlation_plot, width = 8, height = 4)
+```
+
+There is no high correlation between numerical variables
+
+# Data Preparation
+
+Frequency encoding for policy_sales_channel
+
+Target encoding for gender e region_code
+
+## Target encoding
+
+```{r}
+gender_encoder <- df_cleaned %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(gender) %>% 
+  summarise(gender_num = mean(response_num, na.rm = TRUE))
+
+region_encoder <- df_cleaned %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(region_code) %>% 
+  summarise(region_num = mean(response_num, na.rm = TRUE))
+
+# save in RDS
+saveRDS(gender_encoder, "gender_encoder.rds")
+saveRDS(region_encoder, "region_encoder.rds")
+```
+
+## Frequency encoding
+
+```{r}
+policy_encoder <- df_cleaned %>% 
+  group_by(policy_sales_channel) %>% 
+  summarise(policy_num = n()/nrow(df_cleaned))
+
+saveRDS(policy_encoder, "policy_encoder.rds")
+```
+
+### Using the created encoders in the dataset
+
+```{r}
+encoder_function <- function(df){
+  df %>% 
+  left_join(gender_encoder) %>% 
+  select(-gender) %>% 
+  rename(gender = gender_num) %>% 
+  left_join(region_encoder) %>% 
+  select(-region_code) %>% 
+  rename(region_code = region_num) %>% 
+  left_join(policy_encoder) %>% 
+  select(-policy_sales_channel) %>% 
+  rename(policy_sales_channel = policy_num)
+}
+```
+
+```{r}
+saveRDS(encoder_function, "encoder_function.rds")
+```
+
+## Splitting into train and test datasets
+
+```{r}
+encoder_function <- readRDS("encoder_function.rds")
+df_preprocessed <- encoder_function(df_cleaned)
+```
+
+```{r}
+set.seed(123)
+
+df_split <- df_preprocessed %>% 
+  initial_split(prop = 0.75, strata = response)
+
+df_train <- df_split %>% 
+  training()
+
+df_test <- df_split %>% 
+  testing()
+```
+
+### Check response proportions
+
+```{r}
+df_train %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+
+df_test %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+```
+
+### Using tidymodels steps to continue the preprocessing
+
+```{r}
+df_recipe <- recipe(response ~.,
+       data = df_train) %>% 
+  step_normalize(age, days_associated) %>% 
+  step_scale(health_annual_paid) %>% 
+  step_dummy(all_nominal(), -all_outcomes())
+```
+
+### Applying the recipe
+
+```{r}
+df_train_prep <- df_recipe %>% 
+  prep(trining = df_train)
+
+df_train_processed <- df_train_prep %>% 
+  bake(new_data = df_train)
+```
+
+```{r}
+df_test_processed <- df_train_prep %>% 
+  bake(new_data = df_test)
+```
+
+# Feature Selection
+
+```{r}
+predictors <- df_train_processed %>% 
+  select(-id, -response)
+
+target <- df_train_processed$response
+```
+
+```{r}
+start_time <- Sys.time()
+
+rf_model <- randomForest(predictors, target, ntree = 10, importance = TRUE)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+```
+
+### Show results
+
+```{r}
+importance(rf_model) %>% View()
+```
+
+```{r}
+varImpPlot(rf_model)
+```
+
+In tgis first cycle we are going to select the seven most importatnt vaiables according to the mean decrease gini
+
+```{r}
+importance(rf_model) %>% 
+  as_tibble(rownames = "rowname") %>% 
+  arrange(desc(MeanDecreaseGini)) %>% 
+  select(rowname) %>% 
+  slice(1:7) %>% 
+  pull()
+```
+
+```{r}
+selected_columns <- c(
+  "age",
+  "vehicle_damage",
+  "days_associated",
+  "previously_insured",
+  "health_annual_paid",
+  "policy_sales_channel",
+  "region_code",
+  "response"
+)
+```
+
+```{r}
+#Final dataset
+
+df_selected <- df_cleaned %>% 
+  select(all_of(selected_columns))
+
+saveRDS(df_selected, "df_selected.rds")
 ```
