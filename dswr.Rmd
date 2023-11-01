@@ -54,7 +54,7 @@ library(randomForest)
 
 ```{r}
 df <- read_csv("dataset/train.csv")
-glimpse(df)
+glimpse(df, width = 50)
 ```
 
 # Data Cleaning
