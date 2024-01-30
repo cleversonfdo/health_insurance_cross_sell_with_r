@@ -1,0 +1,727 @@
+---
+title: "Data Science With R"
+author: "Cleverson Oliveira"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output:
+  html_document:
+    highlight: textmate
+    logo: logo.png
+    theme: jou
+    number_sections: yes
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+    df_print: paged
+    code_folding: hide
+  pdf_document:
+    toc: yes
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+# Imports
+
+```{r, echo=FALSE}
+#install.packages("devtools")
+#devtools::install_github("ropensci/skimr")
+#install.packages("gtsummary")
+#install.packages("magick")
+#install.packages("summarytools")
+#install.packages("knitr")
+#install.packages("kableExtra")
+#devtools::install_github("kupietz/kableExtra")
+#install.packages("gridExtra")
+#install.packages("reshape2")
+#install.packages("tidymodels")
+#install.packages("randomForest")
+#install.packages("tidyverse")
+#install.packages("RcppEigen")
+#install.packages("ranger")
+#install.packages("xgboost")
+#install.packages("kknn")
+```
+
+```{r, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(gtsummary)
+library(summarytools)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(readr)
+library(ggplot2)
+library(tidymodels)
+library(randomForest)
+```
+
+# Data Collection
+
+```{r, echo=FALSE}
+df <- readr::read_csv("dataset/train.csv")
+glimpse(df, width = 50)
+```
+
+# Data Cleaning
+
+```{r, echo=FALSE}
+df1 <- janitor::clean_names(df) %>% 
+  
+  rename(days_associated = vintage, 
+         health_annual_paid = annual_premium) %>% 
+  
+  mutate(
+    across(where(is.character), tolower),
+    driving_license = ifelse(driving_license==1, "yes", "no"),
+    previously_insured = ifelse(previously_insured==1, "yes", "no"),
+    response = ifelse(response==1, "yes", "no"),
+    vehicle_age = case_when(
+      vehicle_age == "< 1 year" ~ "below_1_year",
+      vehicle_age == "1-2 year" ~ "between_1_2_years",
+      vehicle_age == "> 2 years" ~ "over_2_years"
+    )
+  ) %>% 
+  
+  mutate_if(is.character, as.factor) %>% 
+  # Make sure yes is the first level of factor response
+  mutate(response = factor(response, levels=c("yes", "no")),
+    previously_insured = factor(previously_insured, levels=c("yes", "no")),
+    driving_license = factor(driving_license, levels=c("yes", "no")),
+    vehicle_damage = factor(vehicle_damage, levels=c("yes", "no")))
+
+glimpse(df1)
+
+saveRDS(df1, "df_cleaned.rds")
+```
+
+```{r, echo=FALSE}
+#, eval=FALSE, echo=FALSE}
+# checking categorical levels
+df1 %>% 
+  select(-id) %>% 
+  tbl_summary(
+    type = list(response ~ "categorical",
+                driving_license~ "categorical",
+                previously_insured~ "categorical",
+                vehicle_damage~ "categorical"),
+    digits = list(all_categorical()~c(0, 2))
+  )
+```
+
+```{r, eval=FALSE, echo=FALSE}
+df %>% names()
+df1 %>% names()
+```
+
+## Data Types
+
+```{r estrutura, eval=FALSE, echo=FALSE}
+str(df)
+```
+
+```{r, echo=FALSE}
+variable_classes <- tibble(variables=names(df1),
+       type=unlist(lapply(df1, class)))
+variable_classes
+```
+
+# Column Description
+
+```{r, echo=FALSE}
+variables <- df1 %>% names()
+description <- c(
+  "Unique ID for the customer",
+  "Gender of the customer",
+  "Age of the customer",
+  "Customer has DL (yes/no)",
+  "Unique code for the region of the customer",
+  "Customer already has Vehicle Insurance (yes/no)",
+  "Age of the Vehicle",
+  "Customer got his/her vehicle damaged in the past (yes/no)",
+  "The amount customer needs to pay as premium in the year",
+  "Anonymized Code for the channel of outreaching to the customer ie. Different Agents, Over Mail, Over Phone, In Person, etc.",
+  "Number of Days, Customer has been associated with the company",
+  "Customer is interested in car insurance (yes/no)"
+)
+
+df_description <- tibble(variables = variables,
+       description = description)
+
+kable(df_description, format = "html") %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped",
+                            full_width = FALSE)
+```
+
+# Descriptive Statistics
+
+```{r, echo=FALSE}
+df_cleaned <- readRDS("df_cleaned.rds")
+glimpse(df_cleaned)
+```
+
+## Check data structure
+
+```{r, echo=FALSE}
+skimr::skim(df_cleaned)
+```
+
+## Numerical Statistics
+
+```{r, echo=FALSE}
+num_attributes <- df_cleaned %>% 
+  select(age, health_annual_paid, days_associated)
+
+desciptive_tab <- descr(num_attributes, style="rmarkdown") %>%  round(2)
+
+kable(data.frame(desciptive_tab), format="html") %>% kableExtra::kable_styling(bootstrap_options = "striped", full_width=FALSE)
+```
+
+# Visualization
+
+## Numerical Attributes
+
+```{r, echo=FALSE}
+num_attributes <- df_cleaned %>% 
+  select(age, health_annual_paid, days_associated)
+
+age_plt <- num_attributes %>% 
+  ggplot(aes(x=age)) + 
+  geom_histogram(aes(y=after_stat(density)), binwidth=1, color="gray", fill="lightblue", alpha=0.5) + 
+  geom_density(color="blue") +
+  labs(x="Age", y="Density", title="Customer Age Distribution") + 
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+paid_plt <- num_attributes %>% 
+  ggplot(aes(x=health_annual_paid)) + 
+  geom_histogram(aes(y=after_stat(density)), binwidth=10000, color="gray", fill="lightblue", alpha=0.5) + 
+  geom_density(color="blue") +
+  labs(x="Health Annual Paid", y="Density", title="Customer Payments \nDistribution") + 
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+days_plt <- num_attributes %>% 
+  ggplot(aes(x=days_associated)) + 
+  geom_histogram(aes(y=after_stat(density)), binwidth=5, color="gray", fill="lightblue", alpha=0.5) + 
+  geom_density(color="blue") +
+  labs(x="Health Annual Paid", y="Density", title="Customer Days \nAssociated Distribution") + 
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+grid.arrange(age_plt, paid_plt, days_plt, ncol=3)
+```
+
+## Categorical Attributes
+
+```{r, echo=FALSE}
+num_names <- names(num_attributes)
+cat_attributes <- df_cleaned %>% 
+  select(-id, -one_of(num_names))
+```
+
+```{r, echo=FALSE}
+gender_plt <- cat_attributes %>% 
+  ggplot(aes(x=gender)) +
+  geom_bar(aes(fill=gender)) +
+  labs(x="Gender", y="Quantity", title="Customers Gender") + 
+  theme_minimal()
+
+driving_license_plt <- cat_attributes %>% 
+  ggplot(aes(x=driving_license)) +
+  geom_bar(aes(fill=driving_license)) +
+  labs(x="Driving License", y="Quantity", title="Customers \nDriving License") +
+  theme_minimal()
+
+region_code_plt <- cat_attributes %>% 
+  ggplot(aes(x=region_code)) +
+  geom_bar(aes(fill=factor(region_code)), show.legend = FALSE) +
+  labs(x="Region Code", y="Quantity", title="Customers \nRegion Code") + 
+  theme_minimal()
+
+previously_insured_plt <- cat_attributes %>% 
+  ggplot(aes(x=previously_insured)) +
+  geom_bar(aes(fill=previously_insured)) +
+  labs(x="Previously Insured", y="Quantity", title="Customers \nPreviously Insured") + 
+  theme_minimal()
+
+vehicle_age_plt <- cat_attributes %>% 
+  ggplot(aes(x=vehicle_age)) +
+  geom_bar(aes(fill=vehicle_age)) +
+  labs(x="Vehicle Age", y="Quantity", title="Customers \nVehicle Age") + 
+  theme_minimal()
+
+vehicle_damage_plt <- cat_attributes %>% 
+  ggplot(aes(x=vehicle_damage)) +
+  geom_bar(aes(fill=vehicle_damage)) +
+  labs(x="Vehicle Damage", y="Quantity", title="Customers \nVehicle Damage") + 
+  theme_minimal()
+
+policy_sales_channel_plt <- cat_attributes %>% 
+  ggplot(aes(x=policy_sales_channel)) +
+  geom_bar(aes(fill=factor(policy_sales_channel)), show.legend = FALSE) +
+  labs(x="Police Sales Channel", y="Quantity", title="Customers Police \nSales Channel") + 
+  theme_minimal()
+
+response_plt <- cat_attributes %>% 
+  ggplot(aes(x=response)) +
+  geom_bar(aes(fill=response)) +
+  labs(x="Response", y="Quantity", title="Customers Response") + 
+  theme_minimal()
+```
+
+```{r, echo=FALSE}
+grid.arrange(gender_plt, driving_license_plt, region_code_plt, previously_insured_plt, vehicle_age_plt, vehicle_damage_plt, policy_sales_channel_plt, response_plt, ncol=2, nrow=4)
+```
+
+# Hypothesis Validation
+
+```{r, echo=FALSE}
+df_cleaned <- readRDS("df_cleaned.rds")
+```
+
+### H1) Older customers are more likely to be interested in car insurance.
+
+```{r, echo=FALSE}
+# Boxplot
+age_boxplot <- df_cleaned %>% 
+  ggplot(aes(x=response, y=age)) + 
+  stat_boxplot(geom='errorbar', width=0.6) +
+  geom_boxplot(aes(fill=response), show.legend = FALSE) + 
+  labs(title = "Age vs. Response Comparison", y = "Age", x = "Response") + 
+  theme_bw()
+
+ggsave("age_boxplot.jpg", plot = age_boxplot, width=4, height=6)
+
+# Hystogram
+age_plot <- df_cleaned %>% 
+  ggplot(aes(x=age)) + 
+  geom_histogram(binwidth=1, color="gray", fill="navy") + 
+  facet_wrap(vars(response), nrow=2, scales="free_y") +
+  labs(y="Number of Clients") +
+  ggtitle("Age Distribution")
+
+# To save a figure file
+ggsave("age_plot.jpg", plot = age_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+# Descriptive Statistics
+df_cleaned %>% 
+  select(age, response) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+#### Young people seems to be less likely interested in car insurance. The median age for interested customers is 43 years (IQR: 35, 51), while the median for non-interested customers is 34 years (IQR: 24, 49). \## explain the p-value
+
+### H2) Women are likely more interested in car insurance 🟥
+
+```{r, echo=FALSE}
+gender_plot <- df_cleaned %>% 
+  select(response, gender) %>% 
+  ggplot(aes(x = response)) +
+  geom_bar(aes(fill=gender), position = 'dodge') +
+  labs(title = "Gender vs. Response", x = "Response", y = "Number of customers") +
+    theme_bw()
+gender_plot
+ggsave("gender_plot.jpg", plot = gender_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, gender) %>% 
+  tbl_summary(by = response)
+```
+
+#### For customers interested in car insurance, 61% were men, and 39% were women. So this hypothesis is FALSE. Although, gender and response are statistically significant, i. e., are related.
+
+### H3) Customers having newer cars are more likely to be interested in car insurance
+
+```{r, echo=FALSE}
+car_age_plot <- gender_plot <- df_cleaned %>% 
+  select(response, vehicle_age) %>% 
+  ggplot(aes(x = response)) +
+  # bar chart for categorical label
+  geom_bar(aes(fill = vehicle_age), position = 'dodge') +
+labs(title = "Vehicle Age vs. Response", x = "Response", y = "Number of customers") +
+    theme_bw()
+car_age_plot
+ggsave("car_age_plot.jpg", plot = car_age_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, vehicle_age) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+#### Customers who own a car between 1 and 2 years are more likely to be interested in the car insurance (75%). While, only 15% of the interested customers have new car.
+
+### H4) Customer with previous car damage are more likely to accept car insurance ✅
+
+```{r, echo=FALSE}
+car_damage_plot <- gender_plot <- df_cleaned %>% 
+  select(response, vehicle_damage) %>% 
+  ggplot(aes(x = response)) +
+  # bar chart for categorical label
+  geom_bar(aes(fill = vehicle_damage), position = 'dodge') +
+labs(title = "Vehicle Damage vs. Response", x = "Response", y = "Number of customers") +
+    theme_bw()
+car_damage_plot
+ggsave("car_damage_plot.jpg", plot = car_damage_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, vehicle_damage) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+#### Customers with previous car damage are more likely to be interested in car insurance, as 98% said yes.
+
+### H5) Customers with previous car insurance are more likely to accept car insurance :
+
+```{r, echo=FALSE}
+car_insurance_plot <- gender_plot <- df_cleaned %>% 
+  select(response, previously_insured) %>% 
+  ggplot(aes(x = response)) +
+  # bar chart for categorical label
+  geom_bar(aes(fill = previously_insured), position = 'dodge') +
+labs(title = "Previously Insured vs. Response", x = "Response", y = "Number of customers") +
+    theme_bw()
+car_insurance_plot
+ggsave("car_insurance_plot.jpg", plot = car_insurance_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, previously_insured) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+#### Only 0.3& of customers interested in car insurance have car previously insured
+
+### H6) Interest in car insurance is greater in customers which have higher annual health insurance 🟥
+
+```{r, echo=FALSE}
+# Boxplot
+expenses_boxplot <- df_cleaned %>% 
+  ggplot(aes(x=response, y=health_annual_paid)) + 
+  stat_boxplot(geom='errorbar', width=0.6) +
+  geom_boxplot(aes(fill=response), show.legend = FALSE) + 
+  labs(title = "Health Annual Paind vs. Response Comparison", y = "Annual Payment", x = "Response") + 
+  theme_bw()
+expenses_boxplot
+ggsave("expenses_boxplot.jpg", plot = expenses_boxplot, width=4, height=6)
+
+# Hystogram
+expenses_plot <- df_cleaned %>% 
+  ggplot(aes(x=health_annual_paid)) + 
+  geom_histogram(binwidth=10000, color="gray", fill="navy") + 
+  facet_wrap(vars(response), nrow=2, scales="free_y") +
+  labs(y="Number of Clients") +
+  ggtitle("Expenses Distribution")
+expenses_plot
+# To save a figure file
+ggsave("expenses_plot.jpg", plot = expenses_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, health_annual_paid) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+Although the health annual paid showed to be significant, we consider this hyphotesis false and will further investigate the outliers, in he next cycle for example.
+
+### H7) Customers who has health insurance for LONGER are more likely to be interested in car insurance 🟥
+
+```{r, echo=FALSE}
+# for numerical label
+# Boxplot
+days_boxplot <- df_cleaned %>% 
+  ggplot(aes(x=response, y=days_associated)) + 
+  stat_boxplot(geom='errorbar', width=0.6) +
+  geom_boxplot(aes(fill=response), show.legend = FALSE) + 
+  labs(title = "Days Associated vs. Response Comparison", y = "Annual Payment", x = "Response") + 
+  theme_bw()
+days_boxplot
+ggsave("days_boxplot.jpg", plot = days_boxplot, width=4, height=6)
+
+# Hystogram
+days_plot <- df_cleaned %>% 
+  ggplot(aes(x=days_associated)) + 
+  geom_histogram(binwidth=30, color="gray", fill="navy") + 
+  facet_wrap(vars(response), nrow=2, scales="free_y") +
+  labs(y="Number of Clients") +
+  ggtitle("Expenses Distribution")
+days_plot
+# To save a figure file
+ggsave("days_plot.jpg", plot = days_plot, width=4, height=6)
+```
+
+```{r, echo=FALSE}
+df_cleaned %>% 
+  select(response, days_associated) %>% 
+  tbl_summary(by=response) %>% 
+  add_p()
+```
+
+#### This Hypothesis is false, basically the interested customers and non-interested customers have the same amount of days associated. Yes(median:154 days, IQR: 82, 226); No (154 days, IQR: 82, 227).
+
+### Hypothesis Conclusion
+
+```{r, echo=FALSE}
+hypothesis <- c(
+  "H1) OLDER customers are more likely to be interested in car insurance",
+  "H2) Women are likely more interested in car insurance",
+  "H3) Customers having newer cars are more likely to be interested in car insurance",
+  "H4) Customer with previous car damage are more likely to accept car insurance",
+"H5) Customers with previous car insurance are more likely to accept car insurance",
+"H6) Interest in car insurance is greater in customers which have higher annual health insurance",
+"H7) Customers who has health insurance for LONGER are more likely to be interested in car insurance"
+)
+
+conclusion <- c(
+  "True",
+  "False",
+  "False",
+  "True",
+  "False",
+  "False",
+  "False"
+  
+)
+
+relevance <- c(
+  "High",
+  "Medium",
+  "High",
+  "High",
+  "High",
+  "Low",
+  "Low"
+)
+
+hypothesis_table <- 
+  tibble(hypothesis, conclusion, relevance)
+
+kable(hypothesis_table, format = "html") %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped",
+                            full_width = FALSE)
+```
+
+# Multivariable Analysis
+
+### Correlation Matrix
+
+```{r, echo=FALSE}
+correlation_matrix <- df_cleaned %>% 
+  select(age, days_associated, health_annual_paid) %>% 
+  cor() %>% 
+  round(3)
+```
+
+### Visualization
+
+```{r, echo=FALSE}
+library(reshape2)
+
+melted_correlation <- melt(correlation_matrix)
+
+matrix_correlation_plot <- ggplot(melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() + 
+  geom_text(aes(Var1, Var2, label = value)) + 
+  scale_fill_gradient2(low = "blue", high = "red", limit = c(-1,1), name = "Correlation") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_blank())
+
+matrix_correlation_plot
+
+ggsave("matrix_correlation_plot.jpg", matrix_correlation_plot, width = 8, height = 4)
+```
+
+There is no high correlation between numerical variables
+
+# Data Preparation
+
+Frequency encoding for policy_sales_channel
+
+Target encoding for gender e region_code
+
+## Target encoding
+
+```{r, echo=FALSE}
+gender_encoder <- df_cleaned %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(gender) %>% 
+  summarise(gender_num = mean(response_num, na.rm = TRUE))
+
+region_encoder <- df_cleaned %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(region_code) %>% 
+  summarise(region_num = mean(response_num, na.rm = TRUE))
+
+# save in RDS
+saveRDS(gender_encoder, "gender_encoder.rds")
+saveRDS(region_encoder, "region_encoder.rds")
+```
+
+## Frequency encoding
+
+```{r, echo=FALSE}
+policy_encoder <- df_cleaned %>% 
+  group_by(policy_sales_channel) %>% 
+  summarise(policy_num = n()/nrow(df_cleaned))
+
+saveRDS(policy_encoder, "policy_encoder.rds")
+```
+
+### Using the created encoders in the dataset
+
+```{r, echo=FALSE}
+encoder_function <- function(df){
+  df %>% 
+  left_join(gender_encoder) %>% 
+  select(-gender) %>% 
+  rename(gender = gender_num) %>% 
+  left_join(region_encoder) %>% 
+  select(-region_code) %>% 
+  rename(region_code = region_num) %>% 
+  left_join(policy_encoder) %>% 
+  select(-policy_sales_channel) %>% 
+  rename(policy_sales_channel = policy_num)
+}
+```
+
+```{r, echo=FALSE}
+saveRDS(encoder_function, "encoder_function.rds")
+```
+
+## Splitting into train and test datasets
+
+```{r, echo=FALSE}
+encoder_function <- readRDS("encoder_function.rds")
+df_preprocessed <- encoder_function(df_cleaned)
+```
+
+```{r, echo=FALSE}
+set.seed(123)
+
+df_split <- df_preprocessed %>% 
+  initial_split(prop = 0.75, strata = response)
+
+df_train <- df_split %>% 
+  training()
+
+df_test <- df_split %>% 
+  testing()
+```
+
+### Check response proportions
+
+```{r, echo=FALSE}
+df_train %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+
+df_test %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+```
+
+### Using tidymodels steps to continue the preprocessing
+
+```{r, echo=FALSE}
+df_recipe <- recipe(response ~.,
+       data = df_train) %>% 
+  step_normalize(age, days_associated) %>% 
+  step_scale(health_annual_paid) %>% 
+  step_dummy(all_nominal(), -all_outcomes())
+```
+
+### Applying the recipe
+
+```{r, echo=FALSE}
+df_train_prep <- df_recipe %>% 
+  prep(trining = df_train)
+
+df_train_processed <- df_train_prep %>% 
+  bake(new_data = df_train)
+```
+
+```{r, echo=FALSE}
+df_test_processed <- df_train_prep %>% 
+  bake(new_data = df_test)
+```
+
+# Feature Selection
+
+```{r, echo=FALSE}
+predictors <- df_train_processed %>% 
+  select(-id, -response)
+
+target <- df_train_processed$response
+```
+
+```{r, echo=FALSE}
+start_time <- Sys.time()
+
+rf_model <- randomForest(predictors, target, ntree = 10, importance = TRUE)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+```
+
+### Show results
+
+```{r, echo=FALSE}
+importance(rf_model) %>% View()
+```
+
+```{r, echo=FALSE}
+varImpPlot(rf_model)
+```
+
+In tgis first cycle we are going to select the seven most importatnt vaiables according to the mean decrease gini
+
+```{r, echo=FALSE}
+importance(rf_model) %>% 
+  as_tibble(rownames = "rowname") %>% 
+  arrange(desc(MeanDecreaseGini)) %>% 
+  select(rowname) %>% 
+  slice(1:7) %>% 
+  pull()
+```
+
+```{r, echo=FALSE}
+#Final dataset
+selected_columns <- c(
+  "age",
+  "vehicle_damage",
+  "days_associated",
+  "previously_insured",
+  "health_annual_paid",
+  "policy_sales_channel",
+  "region_code",
+  "response"
+)
+
+df_selected <- df_cleaned %>% 
+  select(all_of(selected_columns))
+
+saveRDS(df_selected, "df_selected.rds")
+```
