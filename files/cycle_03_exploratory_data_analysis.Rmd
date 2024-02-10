@@ -307,4 +307,36 @@ kable(hypothesis_table, format = "html") %>%
                             full_width = FALSE)
 ```
 
-# 
+# Multivariable Analysis
+
+### Correlation Matrix
+
+```{r, echo=FALSE}
+correlation_matrix <- df3 %>% 
+  select(age, days_associated, health_annual_paid) %>% 
+  cor() %>% 
+  round(3)
+```
+
+### Visualization
+
+```{r, echo=FALSE}
+library(reshape2)
+
+melted_correlation <- melt(correlation_matrix)
+
+matrix_correlation_plot <- 
+    ggplot(melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile() + 
+    geom_text(aes(Var1, Var2, label = value)) + 
+    scale_fill_gradient2(low = "blue", high = "red", limit = c(-1,1), name = "Correlation") +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.background = element_blank())
+
+matrix_correlation_plot
+
+ggsave("matrix_correlation_plot.jpg", matrix_correlation_plot, width = 8, height = 4)
+```
+
+#### There is no high correlation between numerical variables
