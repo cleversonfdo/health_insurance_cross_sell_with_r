@@ -340,3 +340,8 @@ ggsave("matrix_correlation_plot.jpg", matrix_correlation_plot, width = 8, height
 ```
 
 #### There is no high correlation between numerical variables
+
+```{r}
+#Saving df3
+saveRDS(df3, "df3.rds")
+```

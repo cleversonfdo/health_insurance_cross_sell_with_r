@@ -62,7 +62,7 @@ library(randomForest)
 # Data Collection
 
 ```{r, echo=FALSE}
-df <- readr::read_csv("dataset/train.csv")
+df <- readr::read_csv("../dataset/train.csv")
 glimpse(df, width = 50)
 ```
 

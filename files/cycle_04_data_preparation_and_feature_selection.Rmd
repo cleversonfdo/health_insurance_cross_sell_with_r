@@ -1,0 +1,273 @@
+---
+title: "Data Preparationa and Feature Selection"
+author: "Cleverson Oliveira"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output:
+  html_document:
+    highlight: textmate
+    logo: logo.png
+    theme: jou
+    number_sections: yes
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+    df_print: paged
+    code_folding: hide
+  pdf_document:
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+# Imports
+
+```{r, echo=FALSE}
+#install.packages("devtools")
+#devtools::install_github("ropensci/skimr")
+#install.packages("gtsummary")
+#install.packages("magick")
+#install.packages("summarytools")
+#install.packages("knitr")
+#install.packages("kableExtra")
+#devtools::install_github("kupietz/kableExtra")
+#install.packages("gridExtra")
+#install.packages("reshape2")
+#install.packages("tidymodels")
+#install.packages("randomForest")
+#install.packages("tidyverse")
+#install.packages("RcppEigen")
+#install.packages("ranger")
+#install.packages("xgboost")
+#install.packages("kknn")
+```
+
+```{r, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(gtsummary)
+library(summarytools)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(readr)
+library(ggplot2)
+library(tidymodels)
+library(randomForest)
+```
+
+# Data Collection
+
+```{r collection, echo=FALSE}
+df4 <- readRDS("df3.rds")
+View(df4)
+glimpse(df4)
+```
+
+# Column Description
+
+```{r, echo=FALSE}
+variables <- df4 %>% names()
+description <- c(
+  "Unique ID for the customer",
+  "Gender of the customer",
+  "Age of the customer",
+  "Customer has DL (yes/no)",
+  "Unique code for the region of the customer",
+  "Customer already has Vehicle Insurance (yes/no)",
+  "Age of the Vehicle",
+  "Customer got his/her vehicle damaged in the past (yes/no)",
+  "The amount customer needs to pay as premium in the year",
+  "Anonymized Code for the channel of outreaching to the customer ie. Different Agents, Over Mail, Over Phone, In Person, etc.",
+  "Number of Days, Customer has been associated with the company",
+  "Customer is interested in car insurance (yes/no)"
+)
+
+df_description <- tibble(variables = variables,
+       description = description)
+
+kable(df_description, format = "html") %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped",
+                            full_width = FALSE)
+```
+
+# Data Preparation
+
+Frequency encoding for policy_sales_channel
+
+Target encoding for gender e region_code
+
+## Target encoding
+
+```{r, echo=FALSE}
+gender_encoder <- df4 %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(gender) %>% 
+  summarise(gender_num = mean(response_num, na.rm = TRUE))
+
+region_encoder <- df4 %>% 
+  mutate(response_num = ifelse(response == "yes", 1, 0)) %>%
+  group_by(region_code) %>% 
+  summarise(region_num = mean(response_num, na.rm = TRUE))
+
+# save in RDS
+saveRDS(gender_encoder, "gender_encoder.rds")
+saveRDS(region_encoder, "region_encoder.rds")
+```
+
+## Frequency encoding
+
+```{r, echo=FALSE}
+policy_encoder <- df4 %>% 
+  group_by(policy_sales_channel) %>% 
+  # divide each category by the number of rows
+  summarise(policy_num = n()/nrow(df4))
+
+saveRDS(policy_encoder, "policy_encoder.rds")
+```
+
+### Building Encoder Function
+
+```{r, echo=FALSE}
+encoder_function <- function(df){
+  df %>% 
+  # add the new encoded columns and delete the original column
+  left_join(gender_encoder) %>% 
+  select(-gender) %>% 
+  rename(gender = gender_num) %>% View()
+    
+  left_join(region_encoder) %>% 
+  select(-region_code) %>% 
+  rename(region_code = region_num) %>% View()
+    
+  left_join(policy_encoder) %>% 
+  select(-policy_sales_channel) %>% 
+  rename(policy_sales_channel = policy_num)
+}
+
+```
+
+```{r, echo=FALSE}
+saveRDS(encoder_function, "encoder_function.rds")
+```
+
+## Splitting data into train and test
+
+```{r, echo=FALSE}
+encoder_function <- readRDS("encoder_function.rds")
+df_preprocessed <- encoder_function(df_cleaned)
+```
+
+```{r, echo=FALSE}
+set.seed(123)
+
+df_split <- df_preprocessed %>% 
+  initial_split(prop = 0.75, strata = response)
+
+df_train <- df_split %>% 
+  training()
+
+df_test <- df_split %>% 
+  testing()
+```
+
+### Check response proportions
+
+```{r, echo=FALSE}
+df_train %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+
+df_test %>% 
+  select(response) %>% 
+  tbl_summary(type = list(response ~ "categorical"))
+```
+
+### Using tidymodels steps to continue the preprocessing
+
+```{r, echo=FALSE}
+df_recipe <- recipe(response ~.,
+       data = df_train) %>% 
+  step_normalize(age, days_associated) %>% 
+  step_scale(health_annual_paid) %>% 
+  step_dummy(all_nominal(), -all_outcomes())
+```
+
+### Applying the recipe
+
+```{r, echo=FALSE}
+df_train_prep <- df_recipe %>% 
+  prep(trining = df_train)
+
+df_train_processed <- df_train_prep %>% 
+  bake(new_data = df_train)
+```
+
+```{r, echo=FALSE}
+df_test_processed <- df_train_prep %>% 
+  bake(new_data = df_test)
+```
+
+# Feature Selection
+
+```{r, echo=FALSE}
+predictors <- df_train_processed %>% 
+  select(-id, -response)
+
+target <- df_train_processed$response
+```
+
+```{r, echo=FALSE}
+start_time <- Sys.time()
+
+rf_model <- randomForest(predictors, target, ntree = 10, importance = TRUE)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+```
+
+### Show results
+
+```{r, echo=FALSE}
+importance(rf_model) %>% View()
+```
+
+```{r, echo=FALSE}
+varImpPlot(rf_model)
+```
+
+In tgis first cycle we are going to select the seven most importatnt vaiables according to the mean decrease gini
+
+```{r, echo=FALSE}
+importance(rf_model) %>% 
+  as_tibble(rownames = "rowname") %>% 
+  arrange(desc(MeanDecreaseGini)) %>% 
+  select(rowname) %>% 
+  slice(1:7) %>% 
+  pull()
+```
+
+```{r, echo=FALSE}
+#Final dataset
+selected_columns <- c(
+  "age",
+  "vehicle_damage",
+  "days_associated",
+  "previously_insured",
+  "health_annual_paid",
+  "policy_sales_channel",
+  "region_code",
+  "response"
+)
+
+df_selected <- df_cleaned %>% 
+  select(all_of(selected_columns))
+
+saveRDS(df_selected, "df_selected.rds")
+```
