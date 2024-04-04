@@ -1,5 +1,5 @@
 ---
-title: "Data Preparationa and Feature Selection"
+title: "Data Preparation and Feature Selection"
 author: "Cleverson Oliveira"
 date: "`r format(Sys.time(), '%d/%m/%Y')`"
 output:
@@ -139,17 +139,16 @@ encoder_function <- function(df){
   # add the new encoded columns and delete the original column
   left_join(gender_encoder) %>% 
   select(-gender) %>% 
-  rename(gender = gender_num) %>% View()
+  rename(gender = gender_num) %>% #View()
     
   left_join(region_encoder) %>% 
   select(-region_code) %>% 
-  rename(region_code = region_num) %>% View()
+  rename(region_code = region_num) %>% #View()
     
   left_join(policy_encoder) %>% 
   select(-policy_sales_channel) %>% 
-  rename(policy_sales_channel = policy_num)
-}
-
+  rename(policy_sales_channel = policy_num) #View()
+} 
 ```
 
 ```{r, echo=FALSE}
@@ -159,8 +158,8 @@ saveRDS(encoder_function, "encoder_function.rds")
 ## Splitting data into train and test
 
 ```{r, echo=FALSE}
-encoder_function <- readRDS("encoder_function.rds")
-df_preprocessed <- encoder_function(df_cleaned)
+#encoder_function <- readRDS("encoder_function.rds")
+df_preprocessed <- encoder_function(df4)
 ```
 
 ```{r, echo=FALSE}
@@ -202,15 +201,18 @@ df_recipe <- recipe(response ~.,
 
 ```{r, echo=FALSE}
 df_train_prep <- df_recipe %>% 
-  prep(trining = df_train)
+  prep(df_train)
+  #prep(training = df_train)
 
 df_train_processed <- df_train_prep %>% 
-  bake(new_data = df_train)
+  bake(df_train)
+  #bake(new_data = df_train)
 ```
 
 ```{r, echo=FALSE}
 df_test_processed <- df_train_prep %>% 
-  bake(new_data = df_test)
+  bake(df_test)
+  #bake(new_data = df_test)
 ```
 
 # Feature Selection
@@ -242,32 +244,32 @@ importance(rf_model) %>% View()
 varImpPlot(rf_model)
 ```
 
-In tgis first cycle we are going to select the seven most importatnt vaiables according to the mean decrease gini
+In this first cycle we are going to select the seven most important variables according to the mean decrease gini
 
 ```{r, echo=FALSE}
 importance(rf_model) %>% 
   as_tibble(rownames = "rowname") %>% 
-  arrange(desc(MeanDecreaseGini)) %>% 
-  select(rowname) %>% 
-  slice(1:7) %>% 
+  arrange(desc(MeanDecreaseGini)) %>%  # arrange the importance
+  select(rowname) %>%  # select the names of columns
+  slice(1:7) %>%  # get only the first seven
   pull()
 ```
 
 ```{r, echo=FALSE}
 #Final dataset
-selected_columns <- c(
-  "age",
-  "vehicle_damage",
-  "days_associated",
-  "previously_insured",
-  "health_annual_paid",
-  "policy_sales_channel",
-  "region_code",
-  "response"
-)
+#selected_columns <- c(
+#  "age",
+#  "vehicle_damage",
+#  "days_associated",
+#  "previously_insured",
+#  "health_annual_paid",
+#  "policy_sales_channel",
+#  "region_code",
+#  "response"
+#)
+#
+#df_selected <- df4 %>% 
+#  select(all_of(selected_columns))
 
-df_selected <- df_cleaned %>% 
-  select(all_of(selected_columns))
-
-saveRDS(df_selected, "df_selected.rds")
+saveRDS(df4, "df4.rds")
 ```

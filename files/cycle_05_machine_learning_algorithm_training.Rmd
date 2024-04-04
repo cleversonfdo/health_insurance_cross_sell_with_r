@@ -1,0 +1,222 @@
+---
+title: "Data Preparation and Feature Selection"
+author: "Cleverson Oliveira"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output:
+  html_document:
+    highlight: textmate
+    logo: logo.png
+    theme: jou
+    number_sections: yes
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+    df_print: paged
+    code_folding: hide
+  pdf_document:
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+# Imports
+
+```{r, echo=FALSE}
+#install.packages("devtools")
+#devtools::install_github("ropensci/skimr")
+#install.packages("gtsummary")
+#install.packages("magick")
+#install.packages("summarytools")
+#install.packages("knitr")
+#install.packages("kableExtra")
+#devtools::install_github("kupietz/kableExtra")
+#install.packages("gridExtra")
+#install.packages("reshape2")
+#install.packages("tidymodels")
+#install.packages("randomForest")
+#install.packages("tidyverse")
+#install.packages("RcppEigen")
+#install.packages("ranger")
+#install.packages("xgboost")
+#install.packages("kknn")
+```
+
+```{r, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(gtsummary)
+library(summarytools)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(readr)
+library(ggplot2)
+library(tidymodels)
+library(randomForest)
+```
+
+# Data Collection
+
+```{r collection, echo=FALSE}
+df <- readRDS("df4.rds")
+
+selected_columns <- c(
+  "id", 
+  "age",
+  "vehicle_damage",
+  "days_associated",
+  "previously_insured",
+  "health_annual_paid", 
+  "policy_sales_channel", 
+  "region_code",
+  "response"
+)
+
+# Final dataset
+df5 <- df %>% select(all_of(selected_columns)) 
+
+View(df5)
+glimpse(df5)
+
+saveRDS(df5, "df5.rds")
+```
+
+# Column Description
+
+```{r, echo=FALSE}
+variables <- df4 %>% names()
+description <- c(
+  "Unique ID for the customer",
+  "Gender of the customer",
+  "Age of the customer",
+  "Customer has DL (yes/no)",
+  "Unique code for the region of the customer",
+  "Customer already has Vehicle Insurance (yes/no)",
+  "Age of the Vehicle",
+  "Customer got his/her vehicle damaged in the past (yes/no)",
+  "The amount customer needs to pay as premium in the year",
+  "Anonymized Code for the channel of outreaching to the customer ie. Different Agents, Over Mail, Over Phone, In Person, etc.",
+  "Number of Days, Customer has been associated with the company",
+  "Customer is interested in car insurance (yes/no)"
+)
+
+df_description <- tibble(variables = variables,
+       description = description)
+
+kable(df_description, format = "html") %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped",
+                            full_width = FALSE)
+```
+
+# Pre-processing
+
+```{r}
+# gender_encoder won't be necessay anymore because the gender column isn't in the selected columns list
+
+region_encoder <- readRDS("region_encoder.rds")
+policy_encoder <- readRDS("policy_encoder.rds")
+
+# Create function
+encoder_function <- function(df){
+  df %>% 
+  left_join(region_encoder) %>% 
+  select(-region_code) %>% 
+  rename(region_code = region_num) %>% 
+  left_join(policy_encoder) %>% 
+  select(-policy_sales_channel) %>% 
+  rename(policy_sales_channel = policy_num) 
+}
+```
+
+```{r}
+df5 <- encoder_function(df5)
+```
+
+## Split into train and test datasets
+
+```{r}
+set.seed(123)
+
+df_split <- df5 %>% 
+            initial_split(prop = 0.80, strata = response)
+
+df_train <- df_split %>% 
+            training()
+
+df_test <- df_split %>% 
+           testing()
+
+# Taking a look on the datasets
+df_train
+df_test
+```
+
+## Applying steps
+
+```{r}
+                    # explain response based on all variable, except id
+df_recipe <- recipe(response ~ ., data = df_train %>% select(-id)) %>% 
+             step_normalize(age, days_associated) %>% 
+             step_scale(health_annual_paid) %>% # lot of outliers
+             step_dummy(all_nominal(), -all_outcomes()) # outcomes = response variable
+```
+
+```{r}
+# Train the recipe
+df_prep <- df_recipe %>% 
+           prep(training = df_train)
+
+df_train_preprocessed <- df_prep %>% 
+                         bake(new_data = df_train)
+
+df_test_preprocessed <- df_prep %>% 
+                        bake(new_data = df_test)
+```
+
+# Logistic Regression
+
+```{r}
+# Model Specification -----------
+logistic_model <- logistic_reg() %>% 
+                  set_engine('glm') %>% 
+                  set_mode('classification')
+```
+
+```{r, eval=FALSE}
+# Model Fitting -----------
+start_time <- Sys.time()
+
+logistic_fit <- logistic_model %>% 
+                fit(response ~., data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+saveRDS(logistic_fit, "logistic_fit.rds")
+```
+
+```{r}
+logistic_fit <- readRDS("logistic_fit.rds")
+
+# Prediction ----------
+class_preds <- logistic_fit %>% 
+               predict(new_data = df_test_preprocessed, type = 'class')
+
+prob_preds <- logistic_fit %>% 
+              predict(new_data = df_test_preprocessed, type = 'prob')
+
+# Combine results -----------
+lr_results <- df_test %>%  # probability of yes and no
+              select(id, response) %>% 
+              bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_lr <-  conf_mat(lr_results, truth = response, estimate = .pred_class)
+```
