@@ -40,7 +40,7 @@ You can also embed plots, for example:
 
 ```{r collection, echo=FALSE}
 library(readr)
-df2 <- read_csv("dataset/train.csv")
+df2 <- read_csv("../dataset/train.csv")
 View(df2)
 glimpse(df2)
 ```
@@ -48,7 +48,7 @@ glimpse(df2)
 # Column Description
 
 ```{r, echo=FALSE}
-variables <- df1 %>% names()
+variables <- df2 %>% names()
 description <- c(
   "Unique ID for the customer",
   "Gender of the customer",
@@ -166,7 +166,7 @@ df2 %>%
 ### Numerical Statistics
 
 ```{r, echo=FALSE}
-num_attributes <- df_cleaned %>% 
+num_attributes <- df2 %>% 
                   select(age, health_annual_paid, days_associated)
 
 desciptive_tab <- descr(num_attributes, style="rmarkdown") %>%  
@@ -181,7 +181,7 @@ kable(data.frame(desciptive_tab), format="html") %>%
 ### Numerical Attributes
 
 ```{r, echo=FALSE}
-num_attributes <- df_cleaned %>% 
+num_attributes <- df2 %>% 
                   select(age, health_annual_paid, days_associated)
 
 age_plt <- num_attributes %>% 
@@ -218,7 +218,7 @@ grid.arrange(age_plt, paid_plt, days_plt, ncol=3)
 
 ```{r, echo=FALSE}
 num_names <- names(num_attributes)
-cat_attributes <- df_cleaned %>% 
+cat_attributes <- df2 %>% 
   select(-id, -one_of(num_names))
 ```
 
