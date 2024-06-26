@@ -3,4 +3,4 @@ Data Science Project: Health Insurance Cross Sell With R
 
 In progress...
 
-Project code [here](https://rpubs.com/cleversonfdo/health_insurance_cross_sell)
+Project code [here](https://rpubs.com/cleversonfdo/data_science_with_r)
