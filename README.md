@@ -9,6 +9,6 @@ Therefore, it would be great to consider the ROI rate for maintaining this algor
 
 With this link you can see some additional information about data analysis and the machine learning application process [here](https://rpubs.com/cleversonfdo/data_science_with_r)
 
-With this link you can see my project working based on a dashboard that predicts the propensity for a single customer and can list some customers by uploading a csv file. [here](https://cleversonoliveira.shinyapps.io/car_insurance_r/)
+With this link you can see my project working based on a dashboard that predicts the propensity for a single customer and can list some classified customers by uploading a csv file. [here](https://cleversonoliveira.shinyapps.io/car_insurance_r/)
 
 This project was carried out with the support of ComunidadDS.
